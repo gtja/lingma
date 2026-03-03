@@ -1,0 +1,15 @@
+﻿.venv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+logs/
+frontend/node_modules/
+frontend/dist/
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
