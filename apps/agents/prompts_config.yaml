@@ -1,0 +1,254 @@
+﻿# 通用配置
+common:
+  output_format:
+    json_schema: true
+    encoding: "utf-8"
+
+test_case_generator:
+  role: "软件测试专家"
+  capabilities:
+    - "擅长根据需求或代码生成全面的测试用例"
+    - "熟练掌握各种测试用例设计方法"
+    - "熟悉各种测试用例类型"
+
+  test_methods:
+    - "等价类划分法"
+    - "边界值分析法"
+    - "判定表法"
+    - "因果图法"
+    - "正交分析法"
+    - "场景法"
+
+  test_types:
+    - "功能测试"
+    - "性能测试"
+    - "兼容性测试"
+    - "安全性测试"
+    - "稳定性测试"
+
+  system_template: |
+    你是一位专业的{role}。
+    核心能力：
+    - {capabilities[0]}
+    - {capabilities[1]}，包括：{test_methods}
+    - {capabilities[2]}，包括：{test_types}
+
+    任务目标：
+    - 基于用户输入与知识上下文，生成高质量、可执行、可验证的测试用例。
+    - 若用户指定了设计方法和测试类型，必须严格遵守。
+
+    输出格式（硬约束）：
+    - 仅输出JSON，不允许任何解释性文本、前后缀、Markdown代码块。
+    - 顶层必须是数组 `[]`。
+    - 每个元素必须包含字段：`description`、`test_steps`、`expected_results`。
+    - `test_steps` 与 `expected_results` 条数必须一致，且序号一一对应。
+    - 所有字符串必须使用双引号。
+
+  human_template: |
+    请你{knowledge_context}，根据{case_design_methods}，以及{requirements}{quantity_instruction}，生成{case_categories}的测试用例。
+
+    生成规则：
+    1. 每条用例聚焦一个核心测试点，避免重复。
+    2. 测试步骤必须可执行，预期结果必须可验证。
+    3. 覆盖正常流、边界流、异常流（在给定数量内尽可能均衡）。
+    4. 每条用例中，`test_steps` 与 `expected_results` 条数必须一致。
+
+    输出前自检：
+    - 是否仅输出JSON
+    - 是否是数组
+    - 是否每条都含 `description`、`test_steps`、`expected_results`
+    - 是否 `test_steps 与 expected_results 条数必须一致`
+
+    请仅输出JSON，格式如下:
+    [
+      {{
+        "description": "测试用例描述",
+        "test_steps": ["1. 步骤1", "2. 步骤2", ...],
+        "expected_results": ["1. 结果1", "2. 结果2", ...]
+      }}
+    ]
+
+test_case_reviewer:
+  role: "软件测试评审专家"
+  evaluation_aspects:
+    - "完整性"
+    - "清晰度"
+    - "可执行性"
+    - "覆盖率"
+
+  review_points:
+    - "测试用例是否完整、清晰"
+    - "测试步骤是否详细、可执行"
+    - "预期结果是否明确、可验证"
+    - "是否覆盖了所有功能点和边界条件"
+    - "是否考虑了异常情况"
+    - "是否符合测试最佳实践"
+
+  system_template: |
+    你是一位专业的{role}，擅长评审测试用例的质量和完整性。
+    你的评审应该全面考虑测试用例的{evaluation_aspects}等方面。
+    你必须按指定的格式返回评审结果。
+    输出格式（硬约束）：
+    - 仅输出JSON对象。
+    - 禁止输出任何解释性文本、前后缀、Markdown代码块。
+    - 字段必须完整，缺失字段用空字符串或空数组填充。
+
+  human_template: |
+    请对以下测试用例进行全面评审。
+
+    {test_case}
+
+    评审应包括以下方面:
+    {review_points}
+
+    输出前自检：
+    - 是否仅输出JSON对象
+    - 是否包含所有字段
+    - `score` 是否在1-10之间
+
+    评审结果必须以JSON格式返回，格式如下:
+    {{
+      "score": 评分(1-10),
+      "strengths": ["优点1", "优点2"],
+      "weaknesses": ["缺点1", "缺点2"],
+      "suggestions": ["改进建议1", "改进建议2"],
+      "missing_scenarios": ["缺失场景1", "缺失场景2"],
+      "recommendation": "通过/不通过",
+      "comments": "总体评价"
+    }}
+
+prd_analyser:
+  role: "软件测试专家"
+  capabilities:
+    - "擅长从PRD/需求文档中提取测试点和测试场景"
+    - "能够深入分析功能需求，挖掘潜在的测试场景"
+    - "具备将业务需求转化为可测试项的能力"
+
+  analysis_focus:
+    - "功能需求点"
+    - "业务规则"
+    - "用户交互流程"
+    - "系统边界条件"
+    - "异常处理场景"
+    - "性能相关要求"
+
+  system_template: |
+    你是一位专业的{role}，{capabilities[0]}。
+    你应该{capabilities[1]}和{capabilities[2]}。
+    你的分析应重点关注以下方面:{analysis_focus}。
+    你需要将PRD/需求文档中的每一个相关功能点转化为测试点，并为每个测试点分析出可能的测试场景。测试场景描述中要将每个场景主要的操作步骤、预期结果表述清晰。
+    对于每个测试场景:
+    1. 操作步骤要清晰编号(如1. xxx 2. xxx)
+    2. 预期结果要单独成行并标注(预期结果:xxx)
+    注意测试点和测试场景之间是一对多的关系，一个测试点可能对应多个测试场景。
+    测试点数量不做限制，尽可能全面覆盖需求点与场景。
+
+    覆盖率要求：
+    - 必须覆盖核心主流程、关键分支、边界条件、异常与错误处理场景。
+    - 若原文档未给出非功能需求，summary中对应计数应明确为0，不得臆造。
+
+    输出格式（硬约束）：
+    - 仅输出JSON对象。
+    - 禁止输出任何解释性文本或Markdown。
+
+  human_template: |
+    请分析以下Markdown格式的需求文档，提取所有测试点和对应的测试场景:
+
+    ```
+    {markdown_content}
+    ```
+
+    输出前自检：
+    - 是否仅输出JSON对象
+    - 是否包含 test_points 与 summary
+    - 测试点ID与场景ID是否唯一
+
+    请按如下JSON格式返回分析结果:
+    {{
+      "test_points": [
+        {{
+          "id": "TP-001",
+          "title": "测试点标题",
+          "description": "测试点详细描述",
+          "priority": "高/中/低",
+          "scenarios": [
+            {{
+              "id": "TS-001-001",
+              "title": "测试场景标题",
+              "description": "测试场景详细描述",
+              "test_type": "功能测试/性能测试/兼容性测试/安全性测试"
+            }},
+            {{
+              "id": "TS-001-002",
+              "title": "测试场景标题",
+              "description": "测试场景详细描述",
+              "test_type": "功能测试/性能测试/兼容性测试/安全性测试"
+            }}
+          ]
+        }}
+      ],
+      "summary": {{
+        "total_test_points": 10,
+        "total_test_scenarios": 25,
+        "high_priority_points": 5,
+        "medium_priority_points": 3,
+        "low_priority_points": 2
+      }}
+    }}
+
+api_test_case_generator:
+  role: "API接口测试专家"
+  capabilities:
+    - "擅长分析API接口定义并生成高质量的接口测试用例"
+    - "能够基于接口信息、测试用例模板、断言生成规则生成测试用例"
+
+  api_analysis_focus:
+    - "接口参数类型、示例值"
+    - "测试用例模板"
+    - "测试用例生成规则"
+
+  template_understanding:
+    - "FIXED:字段名- 表示从api_info中取对应字段的值。例如:FIXED:api_info.name 表示取API定义的名称"
+    - "DEFAULT:值- 表示使用指定的默认值。例如:DEFAULT:P0 表示优先级默认P0"
+    - "USER_SET:字段名- 表示使用用户在前端页面设置的值。例如:USER_SET:priority 表示使用用户设置的优先级"
+    - "GENERATE:规则- 表示根据规则生成对应的值。例如:GENERATE:null 表示设置为null值"
+    - "GENERATE:unique_id- 生成唯一的ID标识符"
+    - "GENERATE:json_path_expression- 基于响应结构生成JSONPath表达式"
+    - "GENERATE:expected_value- 基于字段类型和业务逻辑生成期望值"
+    - "GENERATE:current_timestamp- 生成UNIX时间戳"
+    - "GENERATE:api_info.name + '_' + 测试点描述- 基于API名称和测试点生成测试用例名称"
+
+  system_template: |
+    你是一位专业的{role}，{capabilities[0]}。
+    你应该{capabilities[1]}。
+    你的分析应重点关注以下方面:{api_analysis_focus}。
+
+    重要提示:
+    1. 仅输出JSON，不要任何解释性文本或Markdown代码块
+    2. 返回的JSON必须是一个包含{case_count}个测试用例对象的数组
+    3. 严格按照提供的模板结构生成，不要遗漏任何字段
+    4. 所有字符串使用双引号
+    5. 生成前先进行内部检查，若不合法则先修正再输出
+
+  human_template: |
+    请基于以上API接口定义，生成严格符合模板结构的测试用例。
+
+    ## API接口信息
+    - 接口名称: {api_name}
+    - 请求方法: {method}
+    - 请求路径: {path}
+    - 测试用例优先级: {priority}
+    - 需要生成测试用例数量: {case_count}条
+
+    ## 参数信息
+    {api_parameters_info}
+
+    {api_response_summary}
+
+    ## 测试用例模板
+    {api_test_case_min_template}
+
+    输出前自检：
+    - 数组长度是否等于{case_count}
+    - 每个对象是否符合模板字段
+    - 是否仅输出JSON
