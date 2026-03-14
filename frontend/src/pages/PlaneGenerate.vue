@@ -91,8 +91,8 @@
         </tbody>
       </table>
       <div class="flex" style="margin-top: 12px;">
-        <button @click="save" :disabled="saving">保存到数据库</button>
         <span v-if="saveMessage" class="notice">{{ saveMessage }}</span>
+        <span v-if="effectiveProvider" class="notice">实际使用模型：{{ effectiveProvider }}</span>
       </div>
     </div>
   </div>
@@ -103,7 +103,6 @@ import { onMounted, reactive, ref } from 'vue';
 import { api } from '../api/endpoints';
 
 const providers = ref([]);
-const saving = ref(false);
 const refreshing = ref(false);
 const loadingItems = ref(false);
 const oneClickLoading = ref(false);
@@ -112,6 +111,7 @@ const generateError = ref('');
 const saveMessage = ref('');
 const refreshMessage = ref('');
 const testCases = ref([]);
+const effectiveProvider = ref('');
 
 const form = reactive({
   llm_provider: 'deepseek',
@@ -184,6 +184,8 @@ async function refreshFromPlane() {
 async function oneClickGenerate(itemId = null) {
   generateError.value = '';
   saveMessage.value = '';
+  effectiveProvider.value = '';
+  testCases.value = [];
   const targetId = itemId || selectedId.value;
   if (!targetId) {
     generateError.value = '请先选择一个 Plane 工作项。';
@@ -196,29 +198,16 @@ async function oneClickGenerate(itemId = null) {
       llm_provider: form.llm_provider,
       case_count: form.case_count
     });
+    testCases.value = data.test_cases || [];
+    effectiveProvider.value = data.effective_provider || form.llm_provider;
     saveMessage.value = data.message || '一键生成并保存成功。';
+    if (effectiveProvider.value && effectiveProvider.value !== form.llm_provider) {
+      saveMessage.value += ` 已自动切换到 ${effectiveProvider.value}。`;
+    }
   } catch (e) {
     generateError.value = e.message || '一键生成失败。';
   } finally {
     oneClickLoading.value = false;
-  }
-}
-
-async function save() {
-  if (!testCases.value.length) return;
-  saving.value = true;
-  saveMessage.value = '';
-  try {
-    const data = await api.saveCases({
-      requirement: form.requirements,
-      test_cases: testCases.value,
-      llm_provider: form.llm_provider
-    });
-    saveMessage.value = data.message || '保存成功。';
-  } catch (e) {
-    saveMessage.value = e.message || '保存失败。';
-  } finally {
-    saving.value = false;
   }
 }
 
@@ -238,5 +227,6 @@ function reset() {
   testCases.value = [];
   generateError.value = '';
   saveMessage.value = '';
+  effectiveProvider.value = '';
 }
 </script>

@@ -1,9 +1,10 @@
 from pathlib import Path
 import yaml
 import json
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from langchain.prompts import ChatPromptTemplate
 from langchain.prompts.chat import SystemMessagePromptTemplate, HumanMessagePromptTemplate
+from langchain_core.messages import HumanMessage
 
 class PromptTemplateManager:
     """提示词模板管理器"""
@@ -136,8 +137,17 @@ class TestCaseGeneratorPrompt:
         self.prompt_manager = PromptTemplateManager()
         self.prompt_template = self.prompt_manager.get_test_case_generator_prompt()
     
-    def format_messages(self, requirements: str, case_design_methods: str = "", 
-                       case_categories: str = "", knowledge_context: str = "",case_count: int = 10) -> list:
+    def format_messages(
+        self,
+        requirements: str,
+        case_design_methods: str = "",
+        case_categories: str = "",
+        knowledge_context: str = "",
+        case_count: int = 10,
+        missing_coverage_tags: Optional[List[str]] = None,
+        existing_case_summaries: Optional[List[str]] = None,
+        retry_round: int = 0,
+    ) -> list:
         """格式化消息
         
         Args:
@@ -163,12 +173,12 @@ class TestCaseGeneratorPrompt:
             else "根据你的专业知识"
         )
         quantity_instruction = (
-            "，数量不设上限，尽可能多覆盖需求场景"
+            "，数量不设上限，请尽可能多生成 case，并持续补齐所有覆盖维度"
             if case_count <= 0
-            else f"（数量不设上限，尽可能多覆盖需求场景，参考目标 {case_count} 条）"
+            else f"（至少参考目标 {case_count} 条；如果覆盖维度不足应继续补充，优先生成更多 case 以补齐场景覆盖）"
         )
         
-        return self.prompt_template.format_messages(
+        messages = self.prompt_template.format_messages(
             requirements=requirements,
             case_design_methods=case_design_methods,
             case_categories=case_categories,
@@ -176,6 +186,19 @@ class TestCaseGeneratorPrompt:
             quantity_instruction=quantity_instruction,
             knowledge_context=knowledge_prompt
         )
+        if missing_coverage_tags or existing_case_summaries or retry_round:
+            supplement_lines = [
+                f"补齐要求：当前是第 {retry_round + 1} 轮生成，请避免重复已有测试点。"
+            ]
+            if existing_case_summaries:
+                supplement_lines.append("已有高质量用例摘要：")
+                supplement_lines.extend(f"- {item}" for item in existing_case_summaries[:8])
+            if missing_coverage_tags:
+                supplement_lines.append("当前缺失覆盖维度：")
+                supplement_lines.extend(f"- {item}" for item in missing_coverage_tags)
+            supplement_lines.append("请优先补齐缺失覆盖维度，输出新的、不重复的高质量 case。")
+            messages.append(HumanMessage(content="\n".join(supplement_lines)))
+        return messages
 
 class TestCaseReviewerPrompt:
     """测试用例评审提示词"""
