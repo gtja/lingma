@@ -23,6 +23,20 @@ def _map_llm_error(exc: Exception) -> tuple[int, str]:
     msg = str(exc)
     lower_msg = msg.lower()
     if (
+        "connection error" in lower_msg
+        or "failed to establish a new connection" in lower_msg
+        or "connection aborted" in lower_msg
+        or "connection refused" in lower_msg
+        or "temporarily unavailable" in lower_msg
+    ):
+        return 503, "模型服务暂时不可用（连接失败），请稍后重试，或切换其他模型后再试。"
+    if (
+        "timeout" in lower_msg
+        or "timed out" in lower_msg
+        or "read timeout" in lower_msg
+    ):
+        return 504, "模型服务响应超时，请稍后重试，或切换其他模型后再试。"
+    if (
         "502" in lower_msg
         or "bad gateway" in lower_msg
         or "gateway" in lower_msg
@@ -179,6 +193,7 @@ def plane_work_items(request):
     page = int(request.GET.get('page', 1))
     page_size = int(request.GET.get('page_size', 20))
     keyword = (request.GET.get('keyword') or '').strip()
+    project_id = (request.GET.get('project_id') or '').strip()
 
     qs = PlaneWorkItem.objects.all().order_by('-updated_at')
     if keyword:
@@ -188,6 +203,19 @@ def plane_work_items(request):
             | Q(work_item_name__icontains=keyword)
             | Q(work_item_content__icontains=keyword)
         )
+    if project_id:
+        qs = qs.filter(project_id=project_id)
+
+    projects = [
+        {
+            "project_id": row["project_id"],
+            "project_name": row["project_name"],
+        }
+        for row in PlaneWorkItem.objects.values("project_id", "project_name")
+        .exclude(project_id="")
+        .order_by("project_name", "project_id")
+        .distinct()
+    ]
 
     paginator = Paginator(qs, page_size)
     try:
@@ -211,6 +239,7 @@ def plane_work_items(request):
     return JsonResponse({
         'success': True,
         'items': items,
+        'projects': projects,
         'page': page_obj.number,
         'page_size': page_size,
         'total': paginator.count,
@@ -290,10 +319,10 @@ def plane_one_click_generate(request):
             except Exception as exc:
                 last_exc = exc
                 status, _ = _map_llm_error(exc)
-                if attempt < max_attempts and status == 502:
+                if attempt < max_attempts and status in (502, 503, 504):
                     time.sleep(0.8)
                     continue
-                if status == 502 and active_provider != "qwen" and "qwen" in providers:
+                if status in (502, 503, 504) and active_provider != "qwen" and "qwen" in providers:
                     logger.warning(
                         "plane_one_click_generate 模型网关失败，切换到 qwen: requested_provider=%s current_provider=%s work_item_id=%s error=%s",
                         llm_provider,

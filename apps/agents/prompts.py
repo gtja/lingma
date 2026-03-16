@@ -1,6 +1,7 @@
 from pathlib import Path
 import yaml
 import json
+import re
 from typing import Dict, Any, List, Optional
 from langchain.prompts import ChatPromptTemplate
 from langchain.prompts.chat import SystemMessagePromptTemplate, HumanMessagePromptTemplate
@@ -136,6 +137,43 @@ class TestCaseGeneratorPrompt:
     def __init__(self):
         self.prompt_manager = PromptTemplateManager()
         self.prompt_template = self.prompt_manager.get_test_case_generator_prompt()
+
+    def _looks_like_system_function_content(self, requirements: str) -> bool:
+        text = (requirements or "").strip()
+        if not text:
+            return False
+        markers = [
+            "功能",
+            "页面",
+            "按钮",
+            "菜单",
+            "模块",
+            "列表",
+            "详情",
+            "弹窗",
+            "表单",
+            "提交",
+            "保存",
+            "编辑",
+            "删除",
+            "创建",
+            "查询",
+            "筛选",
+            "切换",
+            "状态",
+            "提示",
+            "支持",
+            "进入",
+            "点击",
+            "配置",
+            "上传",
+            "下载",
+            "调度",
+        ]
+        marker_hits = sum(1 for marker in markers if marker in text)
+        numbered_steps = bool(re.search(r"(\d+[.、]|步骤|主要功能|功能点)", text))
+        line_count = len([line for line in text.splitlines() if line.strip()])
+        return marker_hits >= 3 or numbered_steps or line_count >= 4
     
     def format_messages(
         self,
@@ -198,6 +236,21 @@ class TestCaseGeneratorPrompt:
                 supplement_lines.extend(f"- {item}" for item in missing_coverage_tags)
             supplement_lines.append("请优先补齐缺失覆盖维度，输出新的、不重复的高质量 case。")
             messages.append(HumanMessage(content="\n".join(supplement_lines)))
+        if self._looks_like_system_function_content(requirements):
+            messages.append(
+                HumanMessage(
+                    content="\n".join(
+                        [
+                            "当前输入更像系统功能说明/页面操作说明，请按以下方式增强生成质量：",
+                            "1. 先识别并覆盖输入中的每个功能子点、按钮动作、页面入口、角色、前置条件和状态变化。",
+                            "2. 每个功能子点都要补齐成功路径、失败路径、边界条件、非法输入、权限差异、状态切换、刷新回显、联动校验。",
+                            "3. 对按钮、弹窗、表单、列表、详情、上传下载、调度、启停、切换、创建编辑删除等交互，必须写出贴近真实系统操作的步骤。",
+                            "4. 预期结果必须写清提示信息方向、页面表现、数据变化、状态变化、上下游联动和可观察结果。",
+                            "5. 禁止输出空泛描述，例如“验证功能正常”“验证页面显示正确”；description 必须明确到具体功能点。",
+                        ]
+                    )
+                )
+            )
         return messages
 
 class TestCaseReviewerPrompt:

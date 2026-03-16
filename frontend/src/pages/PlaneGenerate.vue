@@ -17,6 +17,12 @@
 
       <div class="flex" style="margin-top: 12px;">
         <button @click="refreshFromPlane" :disabled="refreshing">手动刷新 Plane</button>
+        <select v-model="projectId" style="max-width: 260px;" @change="onProjectChange">
+          <option value="">全部项目</option>
+          <option v-for="p in projects" :key="p.project_id" :value="p.project_id">
+            {{ p.project_name || p.project_id }}
+          </option>
+        </select>
         <input v-model="keyword" placeholder="搜索项目/标题/内容" style="max-width: 280px;" />
         <button class="secondary" @click="loadPlaneItems" :disabled="loadingItems">查询</button>
       </div>
@@ -125,6 +131,8 @@ const pageSize = ref(20);
 const totalPages = ref(1);
 const total = ref(0);
 const planeItems = ref([]);
+const projects = ref([]);
+const projectId = ref('');
 const selectedId = ref(null);
 
 onMounted(async () => {
@@ -153,11 +161,16 @@ async function loadPlaneItems() {
     const data = await api.listPlaneWorkItems({
       page: page.value,
       pageSize: pageSize.value,
-      keyword: keyword.value
+      keyword: keyword.value,
+      projectId: projectId.value
     });
     planeItems.value = data.items || [];
+    projects.value = data.projects || [];
     total.value = data.total || 0;
     totalPages.value = data.total_pages || 1;
+    if (selectedId.value && !planeItems.value.some((item) => String(item.id) === String(selectedId.value))) {
+      selectedId.value = null;
+    }
   } catch (e) {
     error.value = e.message || '加载 Plane 工作项失败。';
   } finally {
@@ -220,6 +233,11 @@ function prevPage() {
 function nextPage() {
   if (page.value >= totalPages.value) return;
   page.value += 1;
+  loadPlaneItems();
+}
+
+function onProjectChange() {
+  page.value = 1;
   loadPlaneItems();
 }
 
