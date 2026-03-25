@@ -16,6 +16,9 @@ export const api = {
   deleteTestCases: (ids) => apiDelete(`/api/delete-test-cases/?ids=${encodeURIComponent(ids.join(','))}`),
 
   listKnowledge: () => apiGet('/api/knowledge-list/'),
+  listKnowledgeLibrary: () => apiGet('/api/knowledge-library/'),
+  getKnowledgeLibraryDetail: (entryId) =>
+    apiGet(`/api/knowledge-library/detail/?entry_id=${encodeURIComponent(entryId)}`),
   addKnowledge: (payload) => apiPostJson('/api/add-knowledge/', payload),
   searchKnowledge: (payload) => apiPostJson('/api/search-knowledge/', payload),
 
@@ -34,7 +37,9 @@ export const api = {
   getRuleTemplate: () => apiGet('/api/testcase-rule-template/'),
 
   refreshPlaneWorkItems: (payload) => apiPostJson('/api/plane-work-items/', payload),
-  listPlaneWorkItems: ({ page = 1, pageSize = 20, keyword = '' } = {}) =>
-    apiGet(`/api/plane-work-items/?page=${page}&page_size=${pageSize}&keyword=${encodeURIComponent(keyword)}`),
+  listPlaneWorkItems: ({ page = 1, pageSize = 20, keyword = '', projectId = '' } = {}) =>
+    apiGet(
+      `/api/plane-work-items/?page=${page}&page_size=${pageSize}&keyword=${encodeURIComponent(keyword)}&project_id=${encodeURIComponent(projectId)}`
+    ),
   planeOneClickGenerate: (payload) => apiPostJson('/api/plane-one-click-generate/', payload)
 };

@@ -6,6 +6,7 @@ from apps.agents.prompts import (
     PrdAnalyserPrompt,
     APITestCaseGeneratorPrompt,
 )
+from apps.knowledge.schemas import RAGContextResult, RetrievedChunk
 
 
 class PromptQualityTests(unittest.TestCase):
@@ -22,6 +23,82 @@ class PromptQualityTests(unittest.TestCase):
         self.assertIn("输出前自检", merged)
         self.assertIn("仅输出JSON", merged)
         self.assertIn("test_steps 与 expected_results 条数必须一致", merged)
+
+    def test_test_case_generator_requires_broad_functional_and_nonfunctional_coverage(self):
+        prompt = TestCaseGeneratorPrompt()
+        messages = prompt.format_messages(
+            requirements="用户登录",
+            case_design_methods="等价类划分法",
+            case_categories="功能测试",
+            knowledge_context="",
+            case_count=5,
+        )
+        merged = "\n".join(getattr(m, "content", str(m)) for m in messages)
+        self.assertIn("主流程", merged)
+        self.assertIn("关键分支", merged)
+        self.assertIn("边界条件", merged)
+        self.assertIn("异常处理", merged)
+        self.assertIn("性能", merged)
+        self.assertIn("兼容性", merged)
+        self.assertIn("安全", merged)
+        self.assertIn("稳定性", merged)
+        self.assertIn("至少参考目标 5 条", merged)
+        self.assertIn("覆盖不足应继续补充", merged)
+
+    def test_test_case_generator_strengthens_system_function_content_prompts(self):
+        prompt = TestCaseGeneratorPrompt()
+        messages = prompt.format_messages(
+            requirements="""
+            无人机驾驶舱支持点击指点飞行按钮，在地图上选择位置后调度无人机前往。
+            用户可在详情页查看任务状态、提示信息，并支持刷新后回显结果。
+            非管理员不可执行调度操作。
+            """,
+            case_design_methods="场景法",
+            case_categories="功能测试",
+            knowledge_context="",
+            case_count=6,
+        )
+        merged = "\n".join(getattr(m, "content", str(m)) for m in messages)
+        self.assertIn("系统功能内容专用规则", merged)
+        self.assertIn("功能子点", merged)
+        self.assertIn("页面入口", merged)
+        self.assertIn("刷新回显", merged)
+        self.assertIn("联动校验", merged)
+        self.assertIn("禁止输出空泛描述", merged)
+
+    def test_test_case_generator_formats_structured_rag_context_with_citations(self):
+        prompt = TestCaseGeneratorPrompt()
+        knowledge_context = RAGContextResult(
+            query="设备列表",
+            chunks=[
+                RetrievedChunk(
+                    content="设备列表展示设备名称、状态、电量。",
+                    source="uploads/device.md",
+                    chunk_id="device_0001",
+                    doc_type=".md",
+                    vector_score=0.91,
+                    bm25_score=0.87,
+                    hybrid_score=0.90,
+                    citation_id="KB#1",
+                )
+            ],
+            context_text="[KB#1]\nsource: uploads/device.md\nchunk_id: device_0001\nscore: 0.900\ncontent:\n设备列表展示设备名称、状态、电量。",
+            citations=[{"citation_id": "KB#1", "source": "uploads/device.md", "chunk_id": "device_0001"}],
+            used_chunk_count=1,
+            dropped_chunk_count=0,
+        )
+        messages = prompt.format_messages(
+            requirements="设备列表页面",
+            case_design_methods="场景法",
+            case_categories="功能测试",
+            knowledge_context=knowledge_context,
+            case_count=3,
+        )
+        merged = "\n".join(getattr(m, "content", str(m)) for m in messages)
+        self.assertIn("以下是与当前需求相关的知识库证据", merged)
+        self.assertIn("[KB#1]", merged)
+        self.assertIn("source: uploads/device.md", merged)
+        self.assertIn("若知识库证据与用户需求冲突，以用户需求为准", merged)
 
     def test_reviewer_has_machine_readable_json_contract(self):
         prompt = TestCaseReviewerPrompt()

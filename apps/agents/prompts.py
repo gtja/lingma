@@ -1,9 +1,13 @@
 from pathlib import Path
 import yaml
 import json
-from typing import Dict, Any
+import re
+from typing import Dict, Any, List, Optional
 from langchain.prompts import ChatPromptTemplate
 from langchain.prompts.chat import SystemMessagePromptTemplate, HumanMessagePromptTemplate
+from langchain_core.messages import HumanMessage
+
+from apps.knowledge.schemas import RAGContextResult
 
 class PromptTemplateManager:
     """提示词模板管理器"""
@@ -135,9 +139,55 @@ class TestCaseGeneratorPrompt:
     def __init__(self):
         self.prompt_manager = PromptTemplateManager()
         self.prompt_template = self.prompt_manager.get_test_case_generator_prompt()
+
+    def _looks_like_system_function_content(self, requirements: str) -> bool:
+        text = (requirements or "").strip()
+        if not text:
+            return False
+        markers = [
+            "功能",
+            "页面",
+            "按钮",
+            "菜单",
+            "模块",
+            "列表",
+            "详情",
+            "弹窗",
+            "表单",
+            "提交",
+            "保存",
+            "编辑",
+            "删除",
+            "创建",
+            "查询",
+            "筛选",
+            "切换",
+            "状态",
+            "提示",
+            "支持",
+            "进入",
+            "点击",
+            "配置",
+            "上传",
+            "下载",
+            "调度",
+        ]
+        marker_hits = sum(1 for marker in markers if marker in text)
+        numbered_steps = bool(re.search(r"(\d+[.、]|步骤|主要功能|功能点)", text))
+        line_count = len([line for line in text.splitlines() if line.strip()])
+        return marker_hits >= 3 or numbered_steps or line_count >= 4
     
-    def format_messages(self, requirements: str, case_design_methods: str = "", 
-                       case_categories: str = "", knowledge_context: str = "",case_count: int = 10) -> list:
+    def format_messages(
+        self,
+        requirements: str,
+        case_design_methods: str = "",
+        case_categories: str = "",
+        knowledge_context: str | RAGContextResult = "",
+        case_count: int = 10,
+        missing_coverage_tags: Optional[List[str]] = None,
+        existing_case_summaries: Optional[List[str]] = None,
+        retry_round: int = 0,
+    ) -> list:
         """格式化消息
         
         Args:
@@ -156,19 +206,14 @@ class TestCaseGeneratorPrompt:
         if not case_categories:
             case_categories = "所有适用的测试类型"
             
-        # 格式化知识上下文提示
-        knowledge_prompt = (
-            f"参考以下知识库内容：\n{knowledge_context}"
-            if knowledge_context
-            else "根据你的专业知识"
-        )
+        knowledge_prompt = self._format_knowledge_prompt(knowledge_context)
         quantity_instruction = (
-            "，数量不设上限，尽可能多覆盖需求场景"
+            "，数量不设上限，请尽可能多生成 case，并持续补齐所有覆盖维度"
             if case_count <= 0
-            else f"（数量不设上限，尽可能多覆盖需求场景，参考目标 {case_count} 条）"
+            else f"（至少参考目标 {case_count} 条；如果覆盖维度不足应继续补充，优先生成更多 case 以补齐场景覆盖）"
         )
         
-        return self.prompt_template.format_messages(
+        messages = self.prompt_template.format_messages(
             requirements=requirements,
             case_design_methods=case_design_methods,
             case_categories=case_categories,
@@ -176,6 +221,53 @@ class TestCaseGeneratorPrompt:
             quantity_instruction=quantity_instruction,
             knowledge_context=knowledge_prompt
         )
+        if missing_coverage_tags or existing_case_summaries or retry_round:
+            supplement_lines = [
+                f"补齐要求：当前是第 {retry_round + 1} 轮生成，请避免重复已有测试点。"
+            ]
+            if existing_case_summaries:
+                supplement_lines.append("已有高质量用例摘要：")
+                supplement_lines.extend(f"- {item}" for item in existing_case_summaries[:8])
+            if missing_coverage_tags:
+                supplement_lines.append("当前缺失覆盖维度：")
+                supplement_lines.extend(f"- {item}" for item in missing_coverage_tags)
+            supplement_lines.append("请优先补齐缺失覆盖维度，输出新的、不重复的高质量 case。")
+            messages.append(HumanMessage(content="\n".join(supplement_lines)))
+        if self._looks_like_system_function_content(requirements):
+            messages.append(
+                HumanMessage(
+                    content="\n".join(
+                        [
+                            "当前输入更像系统功能说明/页面操作说明，请按以下方式增强生成质量：",
+                            "1. 先识别并覆盖输入中的每个功能子点、按钮动作、页面入口、角色、前置条件和状态变化。",
+                            "2. 每个功能子点都要补齐成功路径、失败路径、边界条件、非法输入、权限差异、状态切换、刷新回显、联动校验。",
+                            "3. 对按钮、弹窗、表单、列表、详情、上传下载、调度、启停、切换、创建编辑删除等交互，必须写出贴近真实系统操作的步骤。",
+                            "4. 预期结果必须写清提示信息方向、页面表现、数据变化、状态变化、上下游联动和可观察结果。",
+                            "5. 禁止输出空泛描述，例如“验证功能正常”“验证页面显示正确”；description 必须明确到具体功能点。",
+                        ]
+                    )
+                )
+            )
+        return messages
+
+    def _format_knowledge_prompt(self, knowledge_context: str | RAGContextResult) -> str:
+        if isinstance(knowledge_context, RAGContextResult):
+            if not knowledge_context.context_text:
+                return "根据你的专业知识"
+            return "\n".join(
+                [
+                    "以下是与当前需求相关的知识库证据，请优先参考高相关证据进行测试设计：",
+                    "若知识库证据与用户需求冲突，以用户需求为准。",
+                    "若知识库证据不足，不要编造知识库中不存在的规则，可补充通用测试专业知识。",
+                    "请重点吸收证据中的业务术语、状态流转、校验规则、边界条件和异常处理。",
+                    "",
+                    knowledge_context.context_text,
+                ]
+            )
+
+        if knowledge_context:
+            return f"参考以下知识库内容：\n{knowledge_context}"
+        return "根据你的专业知识"
 
 class TestCaseReviewerPrompt:
     """测试用例评审提示词"""
@@ -210,6 +302,41 @@ class TestCaseReviewerPrompt:
             test_case=test_case_str,
             review_points=review_points
         )
+
+    def format_batch_messages(self, test_cases: List[Dict[str, Any]]) -> list:
+        """格式化批量评审消息。"""
+        review_points = '\n'.join(
+            f"- {point}"
+            for point in self.prompt_manager.config['test_case_reviewer']['review_points']
+        )
+        cases_payload = []
+        for index, test_case in enumerate(test_cases, start=1):
+            cases_payload.append(
+                {
+                    "index": index,
+                    "description": test_case.get("description", ""),
+                    "test_steps": test_case.get("test_steps", []),
+                    "expected_results": test_case.get("expected_results", []),
+                }
+            )
+
+        batch_case_str = json.dumps(cases_payload, ensure_ascii=False, indent=2)
+        messages = self.prompt_template.format_messages(
+            test_case=batch_case_str,
+            review_points=review_points,
+        )
+        messages.append(
+            HumanMessage(
+                content="\n".join(
+                    [
+                        "请一次性评审上面所有测试用例，并按输入顺序返回等长 JSON 数组。",
+                        "数组中的每个元素对应一个测试用例，必须包含字段：score、strengths、weaknesses、suggestions、missing_scenarios、recommendation、comments。",
+                        "禁止输出 JSON 数组之外的任何解释性文本。",
+                    ]
+                )
+            )
+        )
+        return messages
 
 class PrdAnalyserPrompt:
     """PRD分析提示词"""
